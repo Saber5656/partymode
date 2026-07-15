@@ -1,8 +1,8 @@
 # partymode — v1 Issue Plan
 
 Canonical design: `docs/DESIGN.md`. This file is the complete v1 execution map. GitHub Issues are
-derived from this file and `docs/issues/*.md`; if they disagree, this file and the issue drafts
-win.
+derived from this file and `docs/issues/*.md`; if they disagree on product behavior,
+`docs/DESIGN.md` wins.
 
 ## v1 Completion Statement
 

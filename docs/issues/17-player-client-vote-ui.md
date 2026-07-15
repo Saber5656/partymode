@@ -3,7 +3,7 @@
 ## Summary
 
 Build the player-side `vote` phase view: a tappable multiple-choice list of shuffled answers
-(excluding the player's own bluff), sending `submit_input` with the chosen index.
+(excluding the player's own bluff), sending `submit_input` with the chosen stable answer id.
 
 ## Context
 
@@ -16,22 +16,22 @@ already excludes the player's own bluff entry server-side).
   display per `docs/DESIGN.md` §5.2), a list of tappable answer options rendered from
   `playerView.answers` (already excludes the player's own bluff — no client-side filtering
   needed, just render what's given), a countdown timer (same resync approach as issue 16).
-- Tapping an option immediately sends `submit_input` with `{ phase: 'vote', data: { answerIndex }
-  }` and shows a "voted, waiting for others…" state with the chosen option visually highlighted;
+- Tapping an option immediately sends `submit_input` with `{ phase: 'vote', data: { answerId } }`
+  and shows a "voted, waiting for others…" state with the chosen option visually highlighted;
   allow changing the vote before the phase ends (tap a different option → resubmit, last-write-
   wins per server behavior from issue 09), same re-enable-via-explicit-action pattern as issue 16
   if the implementer wants to avoid accidental mis-taps changing a committed vote — a simpler
   alternative (allowed here since voting is a single tap, lower risk of accidental double-action
   than free text) is to just let any tap on a different option resubmit directly; pick whichever
   the implementer judges better for phone UX and note the choice.
-- Rejected self-vote / invalid index attempts (shouldn't be reachable through the UI since the
+- Rejected self-vote / invalid answer attempts (shouldn't be reachable through the UI since the
   player's own entry isn't in the list, but defensively handle a server rejection) show a generic
   inline error and allow retry.
 
 ## Detailed Requirements
 
-1. Answer options must render in the exact order/index the server sent (no client-side re-
-   sorting), since `answerIndex` sent back to the server must match the server's own indexing.
+1. Answer options must render in the exact order the server sent (no client-side re-sorting), and
+   each tap must submit the stable `answerId` supplied by the server for that option.
 2. Tap targets must be large enough for comfortable phone use (a UI/UX judgment call, not a
    testable acceptance criterion — just avoid tiny inline text links as the only tap target; use
    full-width button-style rows).

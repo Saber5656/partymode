@@ -37,37 +37,38 @@ This is the first concrete `GameModule` implementation, built against the interf
   BluffTriviaHostView, BluffTriviaPlayerView, BluffTriviaInput>` for the phases this issue owns:
   - `id: 'bluff-trivia'`, `minPlayers: 3`, `maxPlayers: 8`.
   - `createInitialState(players)`: picks a random question not in `usedQuestionIds`, sets
-    `phase: 'round_intro'`, `roundIndex: 0`, `scores` initialized to 0 for every player.
+    `phase: 'round_intro'`, `roundIndex: 0`, seeds `usedQuestionIds` with the chosen question id,
+    `scores` initialized to 0 for every player.
   - `getCurrentPhase(state)`: returns `state.phase`.
   - `getPhaseTimeoutMs(phase)`: `round_intro` → 3000, `prompt` → 60000; `vote`/`reveal`/
     `final_results` → implemented in issues 09/10 (this issue may return `null` or throw
     `not_implemented` for those phases as a placeholder, clearly marked).
-  - `getInputSchema(phase)`: for `prompt`, a zod schema `{ bluff: string }` where `bluff` is
-    1–80 chars after trim, must not exactly equal (case-insensitive, trimmed) the current
-    question's `correctAnswer` (reject a player trying to submit the literal truth as their
-    bluff — the server-side schema/refinement should catch this so a cheating client can't force
-    an easy detection; on rejection the engine's `handleInput` should treat it as a validation
-    failure per issue 07, i.e. silently ignored / client gets `error:invalid_message`, not a
-    special error code).
+  - `getInputSchema(state, playerId, phase)`: for `prompt`, a zod schema `{ bluff: string }` where
+    `bluff` is 1–80 chars after trim, must not exactly equal (case-insensitive, trimmed) the
+    current question's `correctAnswer`, and must not equal the reserved no-answer sentinel
+    (case-insensitive, trimmed). Reject a player trying to submit the literal truth as their bluff
+    or the sentinel — the server-side schema/refinement should catch this so a cheating client
+    can't force an easy detection or an indistinguishable timeout answer; on rejection the engine's
+    `handleInput` should treat it as a validation failure per issue 07, i.e. silently ignored /
+    client gets `error:invalid_message`, not a special error code.
   - `applyPlayerInput(state, playerId, input)` for phase `prompt`: sets
     `state.bluffs[playerId] = input.bluff.trim()`, returns new state (immutable update, do not
     mutate in place — return a new object per the interface's implied pure-reducer contract in
     `docs/DESIGN.md` §5.1).
   - `advancePhase(state)` for phase `round_intro` → `prompt` (no special logic, just phase flip)
     and for phase `prompt` → `vote`: for any connected player with no entry in `state.bluffs`,
-    auto-fill an auto-generated placeholder bluff (e.g. `"(no answer)"` — must be a value that
-    cannot collide with a real player-submitted bluff string; prefix it distinctively, e.g.
-    `"— no answer —"`), then hand off to issue 09's vote-phase setup (this issue may
+    auto-fill a reserved placeholder bluff (e.g. `"__NO_ANSWER__"` stored internally and displayed
+    as `"No answer"` in projections) that cannot collide with a real player-submitted bluff string,
+    then hand off to issue 09's vote-phase setup (this issue may
     stub the `vote`-entry setup with a `// see issue 09` marker as long as the `prompt→vote` phase
     flip itself is correct and tested).
-  - `projectHostView(state)` for `round_intro`/`prompt`: `{ phase, roundIndex, totalRounds,
-    category, question, submittedCount, totalPlayers }` — must NOT include any player's bluff
-    text or the correct answer's identity beyond what's needed (the correct answer text itself is
-    not secret at this stage since it hasn't been mixed into a list yet — do not leak which future
-    list entry will be "the truth" beyond what's unavoidable).
-  - `projectPlayerView(state, playerId)` for `round_intro`: `{ phase, roundIndex, totalRounds }`;
-    for `prompt`: `{ phase, category, question, hasSubmitted: boolean }` (never includes
-    `correctAnswer`).
+  - `projectHostView(state, roster)` for `round_intro`/`prompt`: `{ phase, roundIndex,
+    totalRounds, category, question, submittedCount, totalPlayers }` — must NOT include any
+    player's bluff text or the correct answer text/identity before `reveal`. The host display is
+    the shared TV screen, so pre-vote host projections are public to all players.
+  - `projectPlayerView(state, playerId, roster)` for `round_intro`: `{ phase, roundIndex,
+    totalRounds }`; for `prompt`: `{ phase, category, question, hasSubmitted: boolean }` (never
+    includes `correctAnswer`).
   - `isGameOver`/`computeFinalScores`: stub returning `false` / `[]` in this issue (real
     implementation in issue 10) — clearly marked, not silently wrong-but-untested (add a `// see
     issue 10` comment and a unit test asserting the stub's documented placeholder behavior so a
@@ -95,7 +96,8 @@ This is the first concrete `GameModule` implementation, built against the interf
 ## Acceptance Criteria
 
 - `createInitialState` with 3+ mock players produces a valid `BluffTriviaState` in phase
-  `round_intro` with a `currentQuestion` drawn from the bank and `scores` at 0 for every player.
+  `round_intro` with a `currentQuestion` drawn from the bank, `usedQuestionIds` containing that
+  question id, and `scores` at 0 for every player.
 - `advancePhase` from `round_intro` flips to `prompt` with no other state change besides `phase`
   and `phaseEnteredAt`.
 - Submitting a valid bluff via `applyPlayerInput` records it under the correct `playerId`; a
@@ -103,6 +105,8 @@ This is the first concrete `GameModule` implementation, built against the interf
   `docs/DESIGN.md` §7.1).
 - Submitting a bluff equal to the correct answer (any case/whitespace) is rejected by the input
   schema.
+- Submitting a bluff equal to the reserved no-answer sentinel (any case/whitespace/display variant
+  defined by the implementation) is rejected by the input schema.
 - `advancePhase` from `prompt` to `vote` (issue 09 boundary) auto-fills placeholder bluffs for any
   player who never submitted, and does not overwrite real submissions.
 - Unit test confirms `correctAnswer` never appears in serialized host/player views for

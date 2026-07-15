@@ -23,9 +23,9 @@ part of building it.
   - Quickstart: point directly to `docs/RUNBOOK.md` for running a session.
   - Development: point to the "Development" section added in issue 01, plus links to
     `docs/DESIGN.md` and `docs/ISSUE_PLAN.md` for anyone continuing implementation work.
-- Add a short "Documentation Map" section to `README.md` listing each `docs/*` file and its
-  purpose (DESIGN.md = canonical design, ISSUE_PLAN.md = execution map, issues/ = per-issue specs,
-  decisions/ = ADRs, RUNBOOK.md = how to run a session, SMOKE_TEST.md = acceptance checklist).
+- Add a short "Documentation Map" section to `README.md` explicitly linking every file under
+  `docs/` and its purpose, including each issue draft under `docs/issues/` and each ADR under
+  `docs/decisions/`.
 - Re-read `docs/DESIGN.md` and `docs/ISSUE_PLAN.md` end to end and fix any statement that turned
   out to be inaccurate once real implementation happened (e.g. if issue 03 ended up choosing
   Fastify vs. plain `http`, or issue 01 ended up using pnpm instead of npm — reconcile the design

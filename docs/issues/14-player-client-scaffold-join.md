@@ -26,9 +26,11 @@ First player-client issue in Wave 3. Mirrors issue 11's scaffolding but for the 
   - `error:room_not_found` / `room_in_progress` / `nickname_taken` / `nickname_invalid` /
     `room_full`: show the corresponding inline, user-readable message on the form (map each error
     code to a specific human-readable string — do not show raw error codes to the user).
-- On app load, check `localStorage` for an existing session for the room code in the URL (if
-  present) or any stored session; attempt `resume_session` before showing the `Join` form (same
-  seam as issue 11's host-side resume-first behavior).
+- On app load, check `localStorage` for an existing session whose `roomCode` matches the room code
+  in the URL (if present); on `error:session_expired`, clear that stored entry and show the `Join`
+  form. Attempt `resume_session` before showing the `Join` form (same seam as issue 11's host-side
+  resume-first behavior). If no `?code=` is present, do not resume an arbitrary stored session into
+  a different room without an explicit user action.
 
 ## Detailed Requirements
 

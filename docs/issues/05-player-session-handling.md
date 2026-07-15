@@ -39,11 +39,13 @@ own tests).
   message unless `docs/DESIGN.md` explicitly lists one — it does not, so use `roster_update`);
   else `error:session_expired`, close socket (code 4000).
 - WS `close`/`error` event handling for an attached player connection: set state to
-  `disconnected_grace`, start a 45s timer, broadcast `roster_update`; on timer fire with no
-  reconnect, set state to `removed`, broadcast `roster_update` again, and if this drops the
-  connected-player count below `minPlayers` during `IN_GAME`, invoke the pause hook (stub in this
-  issue — issue 10 wires the real pause behavior into the game engine; this issue only needs to
-  call an injectable callback so that seam exists).
+  `disconnected_grace`, start a 45s timer, broadcast `roster_update`; before doing so, verify the
+  eventing socket is still that player's current active connection. If a later `resume_session`
+  already attached a replacement socket, ignore the old socket's late `close`/`error` entirely. On
+  timer fire with no reconnect, set state to `removed`, broadcast `roster_update` again, and if
+  this drops the connected-player count below `minPlayers` during `IN_GAME`, invoke the pause hook
+  (stub in this issue — issue 10 wires the real pause behavior into the game engine; this issue
+  only needs to call an injectable callback so that seam exists).
 - Reject `submit_input` and any in-game message types from a player whose connection isn't in
   `connected` state (defensive — shouldn't normally be reachable since the connection is what
   carries the message, but guards against a race between grace-timer expiry and an in-flight
@@ -59,10 +61,13 @@ own tests).
    do not let a stale timer fire and incorrectly remove a player who already reconnected (guard
    with a timer-generation counter or by nulling the stored timer handle and checking it before
    acting, whichever is simpler to get right).
-4. Reconnection must work from a *different* WebSocket connection object (simulating a phone
+4. Late `close`/`error` events from a superseded player socket must be ignored after a successful
+   `resume_session`; only the currently attached socket can move the player into
+   `disconnected_grace` or start a grace timer.
+5. Reconnection must work from a *different* WebSocket connection object (simulating a phone
    reload) — do not key reconnect logic off anything tied to the old socket instance beyond the
    `sessionToken` itself.
-5. On `removed`, free the player's `PlayerId` slot for player-count purposes but do not reuse the
+6. On `removed`, free the player's `PlayerId` slot for player-count purposes but do not reuse the
    same `PlayerId` value for a new joiner (new joins always get a fresh random `PlayerId`).
 
 ## Acceptance Criteria

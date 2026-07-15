@@ -25,9 +25,10 @@ being in place (issues 03, 04, 06).
   client (issue 14) but each app may have its own copy; do not attempt to share code via a new
   package for v1 unless trivial (duplication across two small client apps is acceptable here).
 - `src/lib/apiClient.ts`: thin `fetch` wrapper for `POST /api/rooms`.
-- `src/screens/CreateRoom.tsx`: on mount, calls `POST /api/rooms`, stores `{ roomCode, hostToken }`
-  in `localStorage` (key namespaced by roomCode, per `docs/DESIGN.md` §6.4), opens the WS
-  connection, sends `host_hello`, and on receiving `host_ready` navigates to the `Lobby` screen
+- `src/screens/CreateRoom.tsx`: on mount, calls `POST /api/rooms`, keeps `hostToken` only long
+  enough to complete `host_hello`, then stores `{ roomCode, sessionToken }` from `host_ready` in
+  `localStorage` (key namespaced by roomCode, per `docs/DESIGN.md` §6.4), opens the WS connection,
+  sends `host_hello`, and on receiving `host_ready` navigates to the `Lobby` screen
   (issue 12 — this issue may render a placeholder "Lobby coming soon" screen if issue 12 isn't
   merged yet, but must not block on it structurally; wire the navigation seam regardless).
 - QR code rendering: add a QR code generation dependency (implementer's choice per
@@ -37,10 +38,10 @@ being in place (issues 03, 04, 06).
 - Display the room code as large, readable text alongside the QR code (some players will type it
   manually rather than scan).
 - On app load, before showing `CreateRoom`, check `localStorage` for an existing
-  `{roomCode, hostToken}` (or a previously-issued `sessionToken` per §6.4) — if present, attempt
-  `resume_session` first; only fall through to a fresh `CreateRoom`/`host_hello` flow if resume
-  fails or no stored session exists. (Full reconnect robustness is issue 19's job; this issue only
-  needs the basic attempt-resume-first seam so it isn't bolted on awkwardly later.)
+  `{roomCode, sessionToken}` per §6.4 — if present, attempt `resume_session` first; only fall
+  through to a fresh `CreateRoom`/`host_hello` flow if resume fails or no stored session exists.
+  (Full reconnect robustness is issue 19's job; this issue only needs the basic
+  attempt-resume-first seam so it isn't bolted on awkwardly later.)
 
 ## Detailed Requirements
 
@@ -61,7 +62,9 @@ being in place (issues 03, 04, 06).
 - The QR code's encoded URL, decoded manually (e.g. via any QR decoder), matches
   `<origin>/join?code=<the displayed room code>`.
 - Network tab / WS inspection confirms: `POST /api/rooms` called once, then a WS connection opens
-  and `host_hello` is sent with the returned `hostToken`, and `host_ready` is received.
+  and `host_hello` is sent with the returned `hostToken`, `host_ready` is received with a
+  `sessionToken`, and localStorage stores the `sessionToken` rather than the bootstrap
+  `hostToken`.
 - Reloading the page re-attempts session resume before falling back to creating a brand-new room
   (verify via network inspection: a `resume_session` message is sent first if a prior session
   exists in `localStorage`).

@@ -58,11 +58,9 @@ the single source of truth for wire types.
    submission, vote submission) are defined by the game module in issues 08/09, not here. This
    package only defines the envelope (`{ phase: string, data: unknown }`) and re-exports a generic
    `SubmitInputMessageSchema` with `data: z.unknown()`; game-specific narrowing happens downstream.
-4. Provide a `Result<T, E>`-style helper type (or use a small discriminated union
-   `{ ok: true, value: T } | { ok: false, error: E }`) for `parseClientMessage` if throwing is
-   deemed undesirable by the implementer — either throwing `ProtocolError` or returning a
-   `Result` is acceptable, but pick one and use it consistently across the package; document the
-   choice in a one-line comment at the top of `protocol.ts`.
+4. `parseClientMessage(raw: unknown)` must throw `ProtocolError` on validation failure. Document
+   the throwing contract in a one-line comment at the top of `protocol.ts`; do not also expose a
+   `Result`-returning alternate for the same parser in v1, so issue 03 has one error-handling path.
 5. All exported schemas must have their inferred static type also exported (e.g. `export type
    JoinRoomMessage = z.infer<typeof JoinRoomMessageSchema>`), since downstream packages should
    import types, not re-derive them.
@@ -74,8 +72,8 @@ the single source of truth for wire types.
   inferred type exported from `@partymode/shared`.
 - `isValidRoomCode` correctly accepts a well-formed 4-char code and rejects codes containing `0`,
   `O`, `1`, or `I`, and rejects wrong-length strings.
-- `parseClientMessage` (or the chosen `Result`-returning equivalent) correctly discriminates all
-  client→server message types by their `type` field and rejects malformed payloads.
+- `parseClientMessage` correctly discriminates all client→server message types by their `type`
+  field and rejects malformed payloads by throwing `ProtocolError`.
 - Unit tests for the above pass via `npm test -w @partymode/shared` (or the workspace-equivalent
   command established in issue 01's scripts — add a root `test` script if issue 01 didn't already
   add one).

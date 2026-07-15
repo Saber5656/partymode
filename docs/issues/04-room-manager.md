@@ -27,7 +27,8 @@ must exist before player/host session handling (issues 05/06) can attach connect
 - Wire `POST /api/rooms` (replacing issue 03's `501` stub) to `RoomManager.createRoom()`, returning
   `201 { roomCode, hostToken }`.
 - Room-level transition table implementation (`docs/DESIGN.md` §4.1):
-  - `start_game` handler: validates room is `LOBBY` and `players.size` is in `[3, 8]`; on success
+  - `start_game` handler: validates room is `LOBBY` and the active player count (`connected` +
+    `disconnected_grace`, excluding `removed`) is in `[3, 8]`; on success
     sets `phase = 'in_game'` and calls a `onGameStart` hook (a no-op placeholder function pointer
     in this issue, replaced by real wiring in issue 07 — do not hardcode a TODO comment, define an
     actual optional constructor parameter/callback so issue 07 has a clean seam); on failure sends
@@ -73,8 +74,10 @@ must exist before player/host session handling (issues 05/06) can attach connect
 - A room can be looked up by `RoomManager.getRoom(roomCode)` immediately after creation and is in
   `phase: 'lobby'`.
 - Simulating a `start_game` event (via a unit test calling the handler directly, since no host WS
-  wiring exists until issue 06) with 0, 2, 3, 8, and 9 mock players produces: reject, reject,
-  accept→`in_game`, accept→`in_game`, reject, respectively, matching the `[3,8]` bound.
+  wiring exists until issue 06) with 0, 2, 3, 8, and 9 active mock players produces: reject,
+  reject, accept→`in_game`, accept→`in_game`, reject, respectively, matching the `[3,8]` bound.
+  Include a case where `removed` sessions remain in `Room.players` but do not count toward the
+  bound.
 - Simulating `end_room` transitions any non-`closed` room to `closed` and the room becomes
   unreachable via `getRoom` afterward (or returns a room with `phase: 'closed'` if the
   implementer chooses to keep closed rooms briefly for late message diagnostics — either is

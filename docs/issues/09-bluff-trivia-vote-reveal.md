@@ -18,15 +18,17 @@ declared there) and `GameModule` skeleton.
   per connected player's bluff (including auto-filled placeholders from issue 08) plus one entry
   for `state.currentQuestion.correctAnswer`, shuffled with a CSPRNG-backed Fisher-Yates (reuse
   `crypto.randomInt`, matching issue 04's room-code RNG choice for consistency), each entry tagged
-  internally with its author (`playerId` or a sentinel `'__truth__'` for the real answer) — this
-  author tagging must be present in `state` (server-authoritative) but never sent to clients until
-  `reveal`.
-- `getInputSchema('vote')`: `{ answerIndex: number }` where `answerIndex` is a valid index into
-  the current shuffled answer list AND does not point at the voting player's own submitted bluff
+  internally with a stable `answerId` and its author (`playerId` or a sentinel `'__truth__'` for
+  the real answer) — this author tagging must be present in `state` (server-authoritative) but
+  never sent to clients until `reveal`.
+- `getInputSchema(state, playerId, 'vote')`: `{ answerId: string }` where `answerId` is present in
+  the current shuffled answer list and does not point at the voting player's own submitted bluff
   (server rejects self-votes per `docs/DESIGN.md` §5.2's VOTE row — the client is expected to hide
-  this option too, per issue 17, but the server must not trust the client).
+  this option too, per issue 17, but the server must not trust the client). Use this stable target
+  id instead of validating an index into the server's full list, because each player's visible list
+  may be pruned.
 - `applyPlayerInput(state, playerId, input)` for phase `vote`: records
-  `state.votes[playerId] = <the answer-list entry id chosen>`; last-write-wins on resubmission
+  `state.votes[playerId] = input.answerId`; last-write-wins on resubmission
   within the phase, same as `prompt`.
 - `advancePhase(state)` for phase `vote` → `reveal`: for any connected player with no vote
   recorded, leave them with no vote (scores 0 for the round per §5.3 — do not auto-assign a random
@@ -46,13 +48,14 @@ declared there) and `GameModule` skeleton.
   the fixed 8s timer only; a host-initiated skip is deferred as a v2 nicety unless trivial to add,
   since `docs/DESIGN.md` describes it as "8s fixed timer, or host manual next" — treat "or host
   manual next" as optional/best-effort, not blocking this issue's acceptance criteria).
-- `projectHostView(state)` for `vote`: `{ phase, question, answers: {index, text}[] (shuffled,
-  no author), votedCount, totalPlayers }`; for `reveal`: `{ phase, truthIndex, answers:
-  {index, text, authorNickname | null}[] (author revealed, null for the truth entry),
-  roundDeltas: Record<nickname, number>, leaderboard: {nickname, totalScore}[] sorted desc }`.
-- `projectPlayerView(state, playerId)` for `vote`: `{ phase, question, answers: {index, text}[]
-  excluding the player's own bluff entry, hasVoted }`; for `reveal`: same reveal payload as host
-  view but also includes `yourDelta: number`.
+- `projectHostView(state, roster)` for `vote`: `{ phase, question, answers: {answerId, index,
+  text}[] (shuffled, no author), votedCount, totalPlayers }`; for `reveal`: `{ phase, truthIndex,
+  answers: {answerId, index, text, authorNickname | null}[] (author revealed, null for the truth
+  entry), roundDeltas: Record<nickname, number>, leaderboard: {nickname, totalScore}[] sorted
+  desc }`.
+- `projectPlayerView(state, playerId, roster)` for `vote`: `{ phase, question, answers:
+  {answerId, index, text}[] excluding the player's own bluff entry, hasVoted }`; for `reveal`:
+  same reveal payload as host view but also includes `yourDelta: number`.
 
 ## Detailed Requirements
 
@@ -66,7 +69,7 @@ declared there) and `GameModule` skeleton.
    only resolved at the projection layer (`projectHostView`/`projectPlayerView`), since nicknames
    are display-only and could theoretically collide in edge cases (they can't, per issue 05's
    uniqueness check, but keep the scoring engine decoupled from that guarantee regardless).
-3. Tie-breaking for the `reveal`-phase `leaderboard` field: sort by `totalScore` descending; for
+4. Tie-breaking for the `reveal`-phase `leaderboard` field: sort by `totalScore` descending; for
    equal scores, preserve original join order (stable sort) — matches the final tie-break rule in
    `docs/DESIGN.md` §5.3 (final tie-break is formally issue 10's concern for `FINAL_RESULTS`, but
    using the same stable rule here keeps per-round leaderboards consistent with the eventual final
@@ -78,9 +81,10 @@ declared there) and `GameModule` skeleton.
   connected-player-count + 1 (all bluffs, including auto-filled placeholders, plus the truth),
   with no duplicate `index` values.
 - A player's own bluff is excluded from their `projectPlayerView` answer list but present in
-  `projectHostView`'s and other players' views.
-- Submitting `answerIndex` pointing at the voter's own bluff is rejected.
-- Submitting `answerIndex` pointing at the truth records a vote that yields +1000 for that player
+  `projectHostView`'s and other players' views, and visible answer ids map to the same stable
+  server-side answer entries regardless of pruning.
+- Submitting `answerId` pointing at the voter's own bluff is rejected.
+- Submitting `answerId` pointing at the truth records a vote that yields +1000 for that player
   after `advancePhase` to `reveal`.
 - A bluff that fools 2 other players yields +1000 total (+500 × 2) added to the bluff author's
   cumulative score after reveal.

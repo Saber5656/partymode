@@ -12,7 +12,7 @@ installs, builds, lints, and type-checks cleanly with placeholder entry points.
 The repository currently contains only `README.md`. `docs/DESIGN.md` §3 specifies the target
 layout:
 
-```
+```text
 partymode/
   package.json
   packages/shared/

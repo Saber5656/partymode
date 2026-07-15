@@ -67,7 +67,7 @@ All issues in `docs/ISSUE_PLAN.md` are complete, and a human can:
 Monorepo, TypeScript throughout, npm workspaces (pnpm not assumed unless already present in repo
 — confirm at implementation time; default to npm workspaces since no lockfile exists yet).
 
-```
+```text
 partymode/
   package.json                 # workspace root
   packages/
@@ -80,7 +80,7 @@ partymode/
 
 ### 3.1 Runtime topology
 
-```
+```text
                  LAN or Internet
    ┌──────────────┐   HTTP (static assets, /api/rooms)
    │  Host display │───────────────┐
@@ -126,14 +126,14 @@ v1 simplification — see ADR-001.
 |---|---|---|---|
 | `LOBBY` | Room created, players may join, host may start | Room created, or game ended and host chose "play again" | Host issues `start_game` with ≥3 players |
 | `IN_GAME` | Delegates to the active `GameEngine`'s phase state (see §5.2) | `start_game` accepted | Game engine reaches `FINAL_RESULTS` and host acknowledges, or host force-ends |
-| `CLOSED` | Room torn down, all connections closed | Host disconnects and grace period (60s) expires with no reconnect, or explicit host "end room" action, or room idle (no host, no players) for 10 minutes | Terminal |
+| `CLOSED` | Room torn down, all connections closed | Host disconnects and grace period (60s) expires with no reconnect, or explicit host "end room" action, or room idle (no host connection and fewer than 1 connected player) for 10 minutes | Terminal |
 
 Room-level transition table:
 
 | From | Event | To | Notes |
 |---|---|---|---|
 | (none) | `POST /api/rooms` (host requests room) | `LOBBY` | Generates room code, creates `Room`, opens host WS handshake window (60s) |
-| `LOBBY` | host `start_game`, players.length ∈ [3,8] | `IN_GAME` | Rejects with `error:not_enough_players` if <3, `error:too_many_players` if >8 |
+| `LOBBY` | host `start_game`, active players ∈ [3,8] | `IN_GAME` | Active players are `CONNECTED` + `DISCONNECTED_GRACE`; reject with `error:not_enough_players` if <3, `error:too_many_players` if >8 |
 | `IN_GAME` | game engine emits `game_over` | `LOBBY` | Final leaderboard broadcast retained in room state until next `start_game` or close |
 | `LOBBY` / `IN_GAME` | host disconnect grace period expires | `CLOSED` | Broadcast `room_closed` to all players first |
 | `LOBBY` / `IN_GAME` | room idle timeout (10 min, no host connected) | `CLOSED` | Safety net cleanup |
@@ -152,9 +152,9 @@ Transition table:
 | From | Event | To | Notes |
 |---|---|---|---|
 | (none) | join accepted in `LOBBY` | `CONNECTED` | See §6.3 join flow |
-| `CONNECTED` | WS close/error | `DISCONNECTED_GRACE` | Start 45s timer; broadcast `player_disconnected` to host + other players |
-| `DISCONNECTED_GRACE` | reconnect with valid session token before timer expires | `CONNECTED` | Broadcast `player_reconnected`; resumes current phase, resubmits nothing automatically — player must re-submit input for the current phase if the phase is still open |
-| `DISCONNECTED_GRACE` | timer expires | `REMOVED` | Broadcast `player_removed`; if this drops roster below 3 during `IN_GAME`, game auto-pauses (see §7.2) |
+| `CONNECTED` | WS close/error | `DISCONNECTED_GRACE` | Start 45s timer; broadcast `roster_update` to everyone in the room |
+| `DISCONNECTED_GRACE` | reconnect with valid session token before timer expires | `CONNECTED` | Broadcast `roster_update`; resumes current phase, resubmits nothing automatically — player must re-submit input for the current phase if the phase is still open |
+| `DISCONNECTED_GRACE` | timer expires | `REMOVED` | Broadcast `roster_update`; if this drops roster below 3 during `IN_GAME`, game auto-pauses (see §7.2) |
 
 Host-level: identical `CONNECTED` / `DISCONNECTED_GRACE` (60s, longer than player grace since
 losing the host is more disruptive) / room `CLOSED` on expiry.
@@ -171,24 +171,30 @@ interface GameModule<TState, THostView, TPlayerView, TPlayerInput> {
   id: string; // e.g. "bluff-trivia"
   minPlayers: number;
   maxPlayers: number;
-  createInitialState(players: PlayerId[]): TState;
+  createInitialState(players: Array<{ id: PlayerId; nickname: string }>): TState;
   // Pure reducer: given current state and a validated player input, returns next state.
   applyPlayerInput(state: TState, playerId: PlayerId, input: TPlayerInput): TState;
   // Called by the phase timer/orchestrator when a phase's time budget elapses or all inputs are in.
   advancePhase(state: TState): TState;
   // Derive what the host display should render (no secret data, e.g. no hidden bluffs pre-reveal).
-  projectHostView(state: TState): THostView;
+  projectHostView(state: TState, roster: Array<{ id: PlayerId; nickname: string }>): THostView;
   // Derive what a specific player's phone should render (may include that player's own private data).
-  projectPlayerView(state: TState, playerId: PlayerId): TPlayerView;
+  projectPlayerView(
+    state: TState,
+    playerId: PlayerId,
+    roster: Array<{ id: PlayerId; nickname: string }>
+  ): TPlayerView;
   isGameOver(state: TState): boolean;
   computeFinalScores(state: TState): Array<{ playerId: PlayerId; score: number }>;
 }
 ```
 
 The `GameEngine` runtime (apps/server) wraps a `GameModule` instance with: a phase timer, input
-validation against `TPlayerInput`'s zod schema, and broadcast triggering (whenever state changes,
-recompute and broadcast `projectHostView`/`projectPlayerView` diffs — v1 may broadcast full views
-rather than diffs; diffing is a v2 optimization).
+validation against the current state's per-phase input schema, roster-aware projection, and
+broadcast triggering (whenever state changes, recompute and broadcast `projectHostView`/
+`projectPlayerView` diffs — v1 may broadcast full views rather than diffs; diffing is a v2
+optimization). Roster display metadata is passed into projections by the engine/WS layer; game
+modules must not reach back into `Room` state directly just to resolve nicknames.
 
 ### 5.2 Bluff-trivia phase state machine
 
@@ -239,8 +245,8 @@ guessing compatibility.
 | `host_hello` | Host, first WS message | `{ roomCode, hostToken }` | Token must match room's issued hostToken; else close(4001) |
 | `join_room` | Player, first WS message | `{ roomCode, nickname }` | Room must exist and be `LOBBY`; nickname 1–16 chars, alnum+space, trimmed, case-insensitive-unique within room; else `error:room_not_found` / `error:room_in_progress` / `error:nickname_taken` / `error:nickname_invalid`; room must have <8 current players else `error:room_full` |
 | `resume_session` | Player or host, first WS message (alternative to join_room/host_hello) | `{ roomCode, sessionToken }` | Token must match a `DISCONNECTED_GRACE` player/host in that room and grace timer not expired; else `error:session_expired` |
-| `start_game` | Host | `{}` | Room must be `LOBBY`, players.length ∈ [3,8] |
-| `submit_input` | Player | `{ phase: string, data: unknown }` | Validated against current `GameModule`'s per-phase input schema; rejected with `error:wrong_phase` if phase doesn't match current state |
+| `start_game` | Host | `{}` | Room must be `LOBBY`, active players ∈ [3,8] |
+| `submit_input` | Player | `{ phase: string, data: unknown }` | Validated against current `GameModule`'s state/player-aware per-phase input schema; rejected with `error:wrong_phase` if phase doesn't match current state |
 | `end_room` | Host | `{}` | Always allowed while host connected |
 | `play_again` | Host | `{}` | Only allowed from `FINAL_RESULTS` |
 | `heartbeat` | Both | `{}` | Server replies `heartbeat_ack`; used for reconnect-grace liveness, not for latency measurement in v1 |
@@ -250,10 +256,10 @@ guessing compatibility.
 | Type | Sent to | Payload |
 |---|---|---|
 | `joined` | Joining player | `{ playerId, sessionToken, roster: Player[] }` |
-| `host_ready` | Host | `{ roomCode, roster: Player[] }` |
-| `roster_update` | All in room | `{ roster: Player[] }` (sent on any join/disconnect/reconnect/remove) |
-| `game_state` (host variant) | Host | `{ roomState, gamePhase, hostView }` — full projection, sent on every state change |
-| `game_state` (player variant) | Each player | `{ roomState, gamePhase, playerView }` — per-player projection (own private data included, others' hidden per phase rules) |
+| `host_ready` | Host | `{ roomCode, sessionToken, roster: Player[] }` |
+| `roster_update` | All in room | `{ roster: Player[], hostConnected: boolean }` (sent on any join/disconnect/reconnect/remove or host connection-status change) |
+| `game_state` (host variant) | Host | `{ roomState, gamePhase, hostConnected, timing: { phaseEnteredAt, timeoutMs }, hostView }` — full projection, sent on every state change |
+| `game_state` (player variant) | Each player | `{ roomState, gamePhase, hostConnected, timing: { phaseEnteredAt, timeoutMs }, playerView }` — per-player projection (own private data included, others' hidden per phase rules) |
 | `error` | Originating client | `{ code: string, message: string }` |
 | `room_closed` | All in room | `{ reason: string }` then server closes all sockets in that room |
 | `heartbeat_ack` | Both | `{}` |

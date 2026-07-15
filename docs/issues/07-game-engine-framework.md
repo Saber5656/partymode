@@ -19,9 +19,10 @@ RoomManager layer").
 
 - `packages/shared/src/gameModule.ts`: the `GameModule<TState, THostView, TPlayerView,
   TPlayerInput>` interface exactly as specified in `docs/DESIGN.md` §5.1, plus a
-  `PhaseInputSchemas` convention: each `GameModule` also exposes `getInputSchema(phase: string):
-  ZodSchema | undefined` so the engine can validate `submit_input.data` against the correct schema
-  for the module's current phase before calling `applyPlayerInput`.
+  state/player-aware input validation convention: each `GameModule` also exposes
+  `getInputSchema(state: TState, playerId: PlayerId, phase: string): ZodSchema | undefined` so the
+  engine can validate `submit_input.data` against the correct schema for the module's current
+  state and submitting player before calling `applyPlayerInput`.
 - `apps/server/src/game/gameEngine.ts`: `GameEngine` class, constructed with a `GameModule`
   instance and the room's player list; responsibilities:
   - Hold `state: TState` (opaque to the engine, owned by the module).
@@ -29,8 +30,8 @@ RoomManager layer").
     phase (derived from `state` via a module-supplied `getCurrentPhase(state): string` — add this
     to the `GameModule` interface as it's needed for the engine to know when to reject
     `error:wrong_phase`, per §6.2's `submit_input` validation rule), validates `data` against
-    `getInputSchema(phase)`, calls `module.applyPlayerInput`, updates `state`, triggers a
-    broadcast.
+    `getInputSchema(state, playerId, phase)`, calls `module.applyPlayerInput`, updates `state`,
+    triggers a broadcast.
   - Phase timers: the engine, not the module, owns `setTimeout`-based phase timers. Each
     `GameModule` phase declares a `timeoutMs: number | null` (null = no auto-timeout, e.g. a
     reveal phase advanced only by host action) via a `getPhaseTimeoutMs(phase: string): number |
@@ -40,10 +41,16 @@ RoomManager layer").
   - "All required players submitted" tracking: the engine, not the module, tracks which
     `PlayerId`s have submitted input for the current phase (a `Set<PlayerId>` reset on each
     `advancePhase` call), since this is generic orchestration logic, not game-specific state.
-  - Broadcast triggering: after every state change, the engine calls `module.projectHostView(state)`
-    and, per connected player, `module.projectPlayerView(state, playerId)`, and hands these to a
-    `broadcast(hostView, playerViewsByPlayerId)` callback injected by the caller (i.e. `Room`/the
-    WS layer from issues 03–06) — the engine itself has no knowledge of WebSocket connections.
+    Expose `updateRequiredPlayers(activePlayerIds: PlayerId[]): void` so room/session code can
+    remove `removed` players from the required set, keep `disconnected_grace` players counted
+    during their grace window, and re-evaluate whether the phase can advance after roster changes.
+  - Broadcast triggering: after every state change, the engine receives roster display data from
+    `Room`/the WS layer, calls `module.projectHostView(state, roster)` and, per connected player,
+    `module.projectPlayerView(state, playerId, roster)`, then hands these plus timing metadata to a
+    `broadcast({ hostView, playerViewsByPlayerId, timing })` callback injected by the caller. The
+    engine itself has no knowledge of WebSocket connections, but it does carry the roster metadata
+    needed for projections to resolve nicknames without reaching back into `Room` state. `timing`
+    is `{ phaseEnteredAt, timeoutMs }`, where `timeoutMs` is the current phase's timeout or `null`.
   - Pause/resume for roster changes: expose `pause(): void` / `resume(): void` on `GameEngine`
     that freeze/unfreeze the current phase timer without losing elapsed time (store
     `remainingMs` on pause, restart a fresh timer for that duration on resume) — this is the seam
@@ -64,9 +71,8 @@ RoomManager layer").
 1. The `GameModule` interface additions beyond `docs/DESIGN.md` §5.1's listed methods
    (`getCurrentPhase`, `getPhaseTimeoutMs`, `getInputSchema`) are engine-support methods this issue
    discovers are necessary; document them as an addendum in `packages/shared`'s `gameModule.ts`
-   doc-comment referencing this issue number, since `docs/DESIGN.md` §5.1's interface listing is
-   not exhaustive on this point — do not edit `docs/DESIGN.md` itself for this addition (it's an
-   implementation refinement, not a design change requiring re-approval).
+   doc-comment referencing this issue number. `getInputSchema` must receive current state and
+   `playerId`, because bluff-trivia prompt and vote validation are state/player-dependent.
 2. `GameEngine` must be fully unit-testable without any WebSocket/HTTP dependency — construct it
    directly with a module and a broadcast-spy callback in tests.
 3. Timer-driven `advancePhase` calls must be safe to invoke even if 0 of N players submitted
@@ -97,6 +103,10 @@ RoomManager layer").
   reaching `applyPlayerInput` (assert `applyPlayerInput` spy is not called).
 - `handleInput` with `data` failing the module's declared input schema for the current phase is
   rejected the same way.
+- Calling `updateRequiredPlayers` after a player becomes `removed` prevents that player from
+  blocking all-inputs-complete advancement or receiving later auto-filled input/scoring.
+- Broadcast spies receive `timing.phaseEnteredAt` and `timing.timeoutMs` on every initial,
+  input-triggered, and timer-triggered broadcast.
 - Wiring smoke test: starting a room's game via the room-level `start_game` message (from issue
   04/06) with the ping-pong fixture registered as the room's module results in `phase: 'in_game'`
   and a broadcast reflecting the fixture's initial host/player views.

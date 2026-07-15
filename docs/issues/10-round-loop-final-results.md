@@ -31,19 +31,21 @@ WebSocket (the Wave 2 gate in `docs/ISSUE_PLAN.md`).
   {nickname, score, rank}[] }` (player view additionally includes `yourRank`).
 - Wire `Room`'s `play_again` (stub since issue 04) for real: only accepted when the room's active
   `GameEngine.isGameOver()` is true; on success, tear down the `GameEngine` instance and transition
-  `Room.phase` back to `'lobby'`, broadcasting `roster_update` with everyone's `score` reset to 0
-  in the *room-level* roster (per-game scores are internal to the finished `GameEngine` and should
-  not leak into the next game's fresh state) — clarify in code comment that `Player.score` in the
-  shared `roster` type is a lobby-facing convenience mirror of the last completed game's final
-  score until a new game starts, at which point it resets to 0.
+  `Room.phase` back to `'lobby'`, then broadcast an explicit room-state/game-state transition (or
+  a roster update that includes the room phase) so final-results clients do not need to infer that
+  they are back in the lobby. `Player.score` in the shared `roster` type remains a lobby-facing
+  convenience mirror of the completed game's final score while the room sits in the post-game
+  lobby; the next successful `start_game` resets room-level roster scores to 0 before constructing
+  the fresh `GameEngine`.
 - Mid-game pause/resume trigger (`docs/DESIGN.md` §7.2): in the WS layer (extending issues 05/06's
   disconnect handling), when a player transitions to `removed` during `IN_GAME` and the resulting
   connected-player count drops below the active `GameModule`'s `minPlayers`, call
   `GameEngine.pause()` (mechanics already built in issue 07) and broadcast a `game_state` update
   whose host/player views include an additional `paused: boolean` field (extend
   `packages/shared`'s `game_state` payload schema, additive change per issue 06's precedent for
-  `hostConnected`). When a `roster_update` brings the connected count back to ≥`minPlayers` while
-  paused, call `GameEngine.resume()` and clear the `paused` flag.
+  `hostConnected`). When a `disconnected_grace` player reconnects and brings the connected count
+  back to ≥`minPlayers` while paused, call `GameEngine.resume()` and clear the `paused` flag. A
+  brand-new mid-game join or reconnect from `removed` is not a valid recovery path in v1.
 - `end_room` while paused must still work (already generically supported since issue 04/06 — this
   issue just needs a regression test confirming pause doesn't block it).
 
@@ -71,17 +73,19 @@ WebSocket (the Wave 2 gate in `docs/ISSUE_PLAN.md`).
 - `play_again` issued by the host while `phase !== 'final_results'` (mid-round) is rejected
   (matches `docs/DESIGN.md` §6.2's validation: "Only allowed from FINAL_RESULTS").
 - `play_again` issued correctly from `final_results` tears down the old engine, room returns to
-  `lobby`, and a subsequent `start_game` begins a fresh 3-round game with reset scores.
+  `lobby`, clients receive an explicit lobby transition, and a subsequent `start_game` begins a
+  fresh 3-round game with reset scores.
 - Simulated roster drop below `minPlayers` (3) during `IN_GAME` (e.g. 3 players, one gets
   `removed`) results in the engine pausing (its phase timer does not fire early/late — assert via
   the fake-clock approach from issue 07) and the next broadcast including `paused: true`.
-- Simulated roster recovery (a 4th player joins mid-pause — note: per `docs/DESIGN.md` non-goals,
-  new players cannot join mid-game; recovery in v1 only happens via an existing player's
-  `resume_session`, not a brand-new join — adjust the test to reconnect a previously-removed... no,
-  `removed` is terminal per §4.2; recovery must be via a *different* already-`disconnected_grace`
-  player's reconnect bringing the connected count back up, or simply the test asserting pause
-  persists correctly when no recovery is possible within v1's rules) confirms `resume()` is called
-  and the timer continues from where it was frozen.
+- Simulated roster recovery uses a reachable v1 path: start with 4 active players, move one player
+  to `disconnected_grace`, then let a different player become `removed` so connected count drops
+  below 3 and the engine pauses; when the `disconnected_grace` player reconnects via
+  `resume_session`, connected count returns to 3, `resume()` is called, and the timer continues
+  from where it was frozen.
+- A separate 3-player scenario where one player becomes `removed` confirms pause persists and no
+  `resume()` call is expected until `end_room`, because v1 has no legal recovery path from that
+  state.
 - `end_room` succeeds while the game is paused.
 
 ## Validation
@@ -95,7 +99,8 @@ WebSocket (the Wave 2 gate in `docs/ISSUE_PLAN.md`).
 
 ## Dependencies
 
-Issue 09 (vote/reveal phases and scoring).
+Issue 09 (vote/reveal phases and scoring), Issue 07 (`GameEngine.pause()`/`resume()` API), and
+Issue 04/06 (`play_again` room-transition and host authority/session seams).
 
 ## Non-goals
 
