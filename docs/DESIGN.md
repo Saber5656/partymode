@@ -302,13 +302,12 @@ guessing compatibility.
 ### 8.1 Host client (apps/host)
 
 Screens: `CreateRoom` (calls `POST /api/rooms`, shows room code + QR code linking to
-`https://<host>/join?code=XXXX`, opens WS as host) → `Lobby` (roster list, "start game" button,
+`http://<host>/join?code=XXXX` for the LAN/localhost v1 target, opens WS as host) → `Lobby` (roster list, "start game" button,
 disabled until ≥3 players) → `InGame` (renders current phase's host view per §5.2 table) →
 `FinalResults` (leaderboard, "play again"/"end room" buttons).
 
-QR code generation: client-side, using a small dependency (library choice deferred to
-implementation issue; any zero-dependency-friendly QR generator that renders to `<svg>` or
-`<canvas>` is acceptable — do not add a server-side QR image endpoint for v1).
+QR code generation: client-side, using the `qrcode` npm package to render a data URL in the host
+client. Do not add a server-side QR image endpoint for v1.
 
 ### 8.2 Player client (apps/player)
 
@@ -331,14 +330,10 @@ losing the currently rendered game state.
     public internet identically (no code branches on this), but only the LAN/localhost path is
     validated and documented for v1. Internet-facing hosting is out of scope for v1 issues and is
     a v2 unknown, not a blocking ambiguity for design or issue-writing.
-- Exact QR code library (evaluate at implementation time: bundle size, SSR/CSR compatibility with
-  Vite, zero native deps).
-- Whether package manager is npm, pnpm, or yarn — no lockfile exists yet in this repo. Design
-  assumes npm workspaces by default; issue 01 should confirm/decide and document the choice as it
-  scaffolds the repo (see ADR-001 candidate if changed later).
-- Exact bundled question bank size/content for bluff-trivia (issue 08 specifies a minimum of 15
-  questions to support 3 non-repeating rounds across multiple sessions without repeats feeling
-  obvious within one sitting; content authoring is otherwise unconstrained).
+- QR code library: resolved for v1 as the `qrcode` npm package in `apps/host`.
+- Package manager: resolved for v1 as npm workspaces with a root `package-lock.json`.
+- Node.js version: v24 LTS is pinned in `.nvmrc` as the compatibility target.
+- Bundled question bank: v1 ships 15 static bluff-trivia questions in `apps/server/src/game/questions.ts`.
 
 ## 10. v2 Deferred Ideas (explicitly out of scope for v1 issues)
 
