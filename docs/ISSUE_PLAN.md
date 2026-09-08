@@ -136,9 +136,8 @@ CI e2e suite.
 - Public-internet hosting target (Fly.io/Render/VPS/etc.) — deferred, not blocking v1 (see
   `docs/DESIGN.md` §9). If the user picks a target before v1 ships, add a new issue rather than
   editing issue 20.
-- Package manager choice (npm vs pnpm vs yarn) — issue 01 decides and documents; not ambiguous
-  enough to block starting, default is npm workspaces.
-- QR code library choice — issue 11 decides at implementation time per the criteria in
-  `docs/DESIGN.md` §8.1.
-- Bundled question bank content beyond the minimum count (15 questions) specified in issue 08 —
-  more questions can be added later without a new issue (content-only change).
+- Package manager choice: resolved for v1 as npm workspaces with a root `package-lock.json`.
+- QR code library choice: resolved for v1 as the `qrcode` npm package in `apps/host`.
+- Node.js version: v24 LTS is pinned in `.nvmrc`.
+- Bundled question bank content: v1 ships the minimum 15 static questions in
+  `apps/server/src/game/questions.ts`; more questions can be added later without a new issue.
