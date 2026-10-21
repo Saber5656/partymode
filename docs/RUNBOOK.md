@@ -3,7 +3,9 @@
 ## Run a LAN party session
 
 1. Put the laptop and all phones on the same Wi-Fi network.
-2. From the repository root, run:
+2. From the repository root, activate the patched Node.js version in `.nvmrc`. With nvm,
+   run `nvm install` and `nvm use`; with another installer or version manager, select
+   Node.js 24.22.1 explicitly. Confirm `node --version` prints `v24.22.1`, then run:
 
    ```sh
    npm install

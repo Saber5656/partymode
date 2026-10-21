@@ -9,7 +9,13 @@ private text prompts, voting, reveal, scoring, and a final leaderboard.
 
 Use [docs/RUNBOOK.md](docs/RUNBOOK.md) to run a local or LAN session.
 
+Activate the Node.js version in `.nvmrc` before installing dependencies. With nvm, run
+`nvm install` followed by `nvm use`. With another installer or version manager, select
+Node.js 24.22.1 explicitly. The `.nvmrc` file alone does not switch an existing shell.
+Verify that `node --version` prints `v24.22.1` before continuing.
+
 ```sh
+node --version # must print v24.22.1
 npm install
 npm run build
 npm run lan
