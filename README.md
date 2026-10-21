@@ -19,7 +19,7 @@ npm run start
 ## Development
 
 - Package manager: npm workspaces.
-- Node.js: v24 LTS is pinned in [.nvmrc](.nvmrc); newer local Node versions may work, but v24 is
+- Node.js: v24.22.1 LTS is pinned in [.nvmrc](.nvmrc); newer local Node versions may work, but v24 is
   the compatibility target.
 - Scripts:
   - `npm run build`: build all workspaces.

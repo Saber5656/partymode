@@ -138,6 +138,6 @@ CI e2e suite.
   editing issue 20.
 - Package manager choice: resolved for v1 as npm workspaces with a root `package-lock.json`.
 - QR code library choice: resolved for v1 as the `qrcode` npm package in `apps/host`.
-- Node.js version: v24 LTS is pinned in `.nvmrc`.
+- Node.js version: v24.22.1 LTS is pinned in `.nvmrc`.
 - Bundled question bank content: v1 ships the minimum 15 static questions in
   `apps/server/src/game/questions.ts`; more questions can be added later without a new issue.

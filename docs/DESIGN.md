@@ -332,7 +332,7 @@ losing the currently rendered game state.
     a v2 unknown, not a blocking ambiguity for design or issue-writing.
 - QR code library: resolved for v1 as the `qrcode` npm package in `apps/host`.
 - Package manager: resolved for v1 as npm workspaces with a root `package-lock.json`.
-- Node.js version: v24 LTS is pinned in `.nvmrc` as the compatibility target.
+- Node.js version: v24.22.1 LTS is pinned in `.nvmrc` as the compatibility target.
 - Bundled question bank: v1 ships 15 static bluff-trivia questions in `apps/server/src/game/questions.ts`.
 
 ## 10. v2 Deferred Ideas (explicitly out of scope for v1 issues)
